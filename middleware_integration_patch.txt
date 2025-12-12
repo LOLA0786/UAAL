@@ -1,0 +1,44 @@
+PATCH INSTRUCTIONS FOR app_v2.py
+--------------------------------
+Open /Users/rinky/Downloads/uaal_prototype/app_v2.py and perform these exact edits.
+
+A) Add imports near the top (after other imports):
+    from fastapi import Depends
+    import middleware_auth
+    import middleware_rbac
+
+B) Modify route signatures to accept the current_user dependency and require role where appropriate.
+
+Replace the receive_action signature:
+    async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Header(None)):
+WITH:
+    async def receive_action(payload: ReceiveAction, current_user: dict = Depends(middleware_auth.get_current_user)):
+
+Replace the approve_action signature:
+    async def approve_action(action_id: str, x_user_id: Optional[str] = Header(None)):
+WITH:
+    async def approve_action(action_id: str, current_user: dict = Depends(middleware_auth.get_current_user), _=Depends(middleware_rbac.require_role("approver"))):
+
+Replace the reject_action signature:
+    async def reject_action(action_id: str, x_user_id: Optional[str] = Header(None)):
+WITH:
+    async def reject_action(action_id: str, current_user: dict = Depends(middleware_auth.get_current_user), _=Depends(middleware_rbac.require_role("approver"))):
+
+Replace create_user signature:
+    def create_user(u: CreateUser):
+WITH:
+    def create_user(u: CreateUser, current_user: dict = Depends(middleware_auth.get_current_user), _=Depends(middleware_rbac.require_role("admin"))):
+
+Replace add_watchlist signature:
+    def add_watchlist(entry: WatchlistEntry, x_user_id: Optional[str] = Header(None)):
+WITH:
+    def add_watchlist(entry: WatchlistEntry, current_user: dict = Depends(middleware_auth.get_current_user), _=Depends(middleware_rbac.require_role("admin"))):
+
+Replace register_webhook signature:
+    async def register_webhook(req: Request, x_user_id: Optional[str] = Header(None)):
+WITH:
+    async def register_webhook(req: Request, current_user: dict = Depends(middleware_auth.get_current_user)):
+
+C) Optional: protect /admin/api-keys/create and /admin/api-keys/verify by adding admin role via:
+    current_user: dict = Depends(middleware_auth.get_current_user), _=Depends(middleware_rbac.require_role("admin"))
+

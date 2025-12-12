@@ -1,0 +1,29 @@
+groups:
+- name: uaal-alerts
+  rules:
+  - alert: HighPolicyViolations
+    expr: increase(uaal_policy_violations_total[5m]) > 5
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High rate of policy violations"
+      description: "More than 5 policy violations in the last 5 minutes."
+
+  - alert: ManyRetriesPending
+    expr: uaal_retries_total > 10
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Retry queue growing"
+      description: "Retry queue has more than 10 items."
+
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, sum(rate(uaal_action_latency_seconds_bucket[5m])) by (le)) > 2
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High 95th percentile latency"
+      description: "95th percentile action handling latency > 2s"

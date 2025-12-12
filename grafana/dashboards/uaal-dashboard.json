@@ -1,0 +1,51 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Actions per second",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "rate(uaal_actions_total[1m])", "legendFormat": "{{actor_id}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Policy violations (increase over 5m)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "increase(uaal_policy_violations_total[5m])", "legendFormat": "violations"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Approval queue size",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "uaal_approval_queue_size", "legendFormat": "pending"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Retries pending",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {"expr": "uaal_retries_total", "legendFormat": "retries"}
+      ]
+    }
+  ],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": ["uaal"],
+  "templating": { "list": [] },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "title": "UAAL Overview",
+  "uid": "uaal-overview",
+  "version": 1
+}
