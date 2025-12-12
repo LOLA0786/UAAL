@@ -1,0 +1,51 @@
+from logging.config import fileConfig
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
+import os
+import sys
+
+# Ensure project root is on path
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+# this is the Alembic Config object, which provides
+# access to the values within the .ini file in use.
+config = context.config
+
+# Interpret the config file for Python logging.
+fileConfig(config.config_file_name)
+
+# Import your db Base
+from db import Base
+
+target_metadata = Base.metadata
+
+
+def get_url():
+    return os.environ.get("DATABASE_URL", "sqlite:///./uaal_v2.db")
+
+
+def run_migrations_offline():
+    url = get_url()
+    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online():
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+        url=get_url(),
+    )
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()

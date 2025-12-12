@@ -432,3 +432,37 @@ def admin_token(user_id: str):
 @app.get("/", response_class=HTMLResponse)
 def root():
     return {"status": "UAAL v2 Enterprise running", "version": "2.0", "docs": "/docs"}
+
+
+# Retry endpoints (requires redis + retry.py)
+import retry
+from fastapi import Response
+
+
+@app.get("/admin/retries/count")
+def retries_count():
+    return {"count": retry.retry_count()}
+
+
+@app.get("/admin/retries/peek")
+def retries_peek(limit: int = 20):
+    return {"items": retry.fetch_due(limit)}
+
+
+# Simple API key endpoints (dev)
+import apikeys
+
+
+@app.post("/admin/api-keys/create")
+def admin_api_key_create(payload: dict):
+    owner = payload.get("owner", "unknown")
+    scopes = payload.get("scopes", "")
+    key = apikeys.create_key(owner=owner, scopes=scopes)
+    return {"api_key": key, "owner": owner}
+
+
+@app.post("/admin/api-keys/verify")
+def admin_api_key_verify(payload: dict):
+    raw = payload.get("key")
+    ok = apikeys.verify_key(raw)
+    return {"valid": bool(ok), "meta": ok}
