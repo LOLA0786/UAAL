@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>UAAL Live Dashboard</title></head>
+  <body>
+    <h1>UAAL Live Actions</h1>
+    <ul id="events"></ul>
+    <script>
+      const ws = new WebSocket("ws://localhost:8000/ws", "json");
+      ws.onopen = () => console.log("connected");
+      ws.onmessage = (e) => {
+        const out = document.getElementById("events");
+        const li = document.createElement("li");
+        li.textContent = e.data;
+        out.prepend(li);
+      };
+      ws.onclose = () => console.log("closed");
+    </script>
+  </body>
+</html>

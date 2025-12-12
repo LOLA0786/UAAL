@@ -16,3 +16,8 @@ pytest
 ruff
 black
 sendgrid
+openapi-python-client
+confluent-kafka
+python-dotenv
+pyjwt
+twilio
