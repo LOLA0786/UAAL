@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>UAAL Admin Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f5f6fb; --card: #fff; --muted:#666; --accent:#1976D2;
+    }
+    [data-theme="dark"] {
+      --bg: #0f1115; --card:#111318; --muted:#aaa; --accent:#4ea3ff;
+      color: #ddd;
+    }
+    body { font-family: Inter, Arial, sans-serif; margin:0; background:var(--bg); color:inherit; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:var(--card); box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+    h1 { margin:0; font-size:18px; }
+    .container { padding:20px; max-width:1200px; margin:0 auto; }
+    .grid { display:grid; grid-template-columns: 1fr 360px; gap:20px; align-items:start; }
+    .card { background:var(--card); padding:14px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04); }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th,td{ text-align:left; padding:6px 8px; border-bottom:1px solid rgba(0,0,0,0.06); }
+    .muted { color:var(--muted); font-size:13px;}
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab { padding:8px 12px; border-radius:6px; cursor:pointer; background:transparent; }
+    .tab.active { background:var(--accent); color:white;}
+    .small { font-size:13px; }
+    .btn { padding:6px 10px; border-radius:6px; background:var(--accent); color:#fff; border:none; cursor:pointer; }
+    .danger { background:#e53935; }
+    .row { display:flex; gap:10px; align-items:center; }
+    #loginBox input { padding:8px; width:220px; }
+  </style>
+</head>
+<body data-theme="light">
+  <header>
+    <div style="display:flex; gap:16px; align-items:center">
+      <h1>UAAL Admin Console</h1>
+      <div class="muted small">Local development</div>
+    </div>
+    <div class="row">
+      <label style="margin-right:8px">Theme</label>
+      <button class="btn small" id="toggleTheme">Dark</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="dashboard">Dashboard</div>
+      <div class="tab" data-tab="actions">Actions</div>
+      <div class="tab" data-tab="approval">Approval Queue</div>
+      <div class="tab" data-tab="analytics">Analytics</div>
+      <div class="tab" data-tab="users">Users / API Keys</div>
+    </div>
+
+    <div id="pages">
+      <!-- DASHBOARD -->
+      <div id="dashboard" class="page">
+        <div class="grid">
+          <div>
+            <div class="card">
+              <h3>Latest Actions</h3>
+              <div id="latestActions">loading…</div>
+            </div>
+
+            <div class="card" style="margin-top:12px;">
+              <h3>Anomaly Heatmap (Confidence z-score)</h3>
+              <canvas id="heatmap" style="height:240px"></canvas>
+            </div>
+          </div>
+
+          <div>
+            <div class="card">
+              <h3>Actions per Agent</h3>
+              <canvas id="actionsPerAgent" style="height:220px"></canvas>
+            </div>
+
+            <div class="card" style="margin-top:12px;">
+              <h3>Policy Violations</h3>
+              <div id="policyViolations">loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIONS LIST -->
+      <div id="actions" class="page" style="display:none">
+        <div class="card">
+          <h3>All Actions</h3>
+          <div id="actionsTable">loading…</div>
+        </div>
+      </div>
+
+      <!-- APPROVAL -->
+      <div id="approval" class="page" style="display:none">
+        <div class="card">
+          <h3>Approval Queue</h3>
+          <div id="approvalList">loading…</div>
+        </div>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div id="analytics" class="page" style="display:none">
+        <div class="card">
+          <h3>Spend by Agent</h3>
+          <canvas id="spendChart" style="height:200px"></canvas>
+        </div>
+      </div>
+
+      <!-- USERS -->
+      <div id="users" class="page" style="display:none">
+        <div class="card">
+          <h3>Users / API Keys</h3>
+          <div id="usersList">loading…</div>
+          <div style="margin-top:10px;">
+            <div id="loginBox">
+              <input id="loginUser" placeholder="user id (e.g., alice or api_key_123)"/>
+              <button class="btn" id="getToken">Get Dev Token</button>
+              <div class="muted small" id="tokenBox"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+const state = {
+  token: null,
+  apiKey: null
+};
+
+// tabs
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.querySelectorAll('.page').forEach(p=>p.style.display='none');
+    document.getElementById(t.dataset.tab).style.display = 'block';
+  };
+});
+
+// theme toggle
+document.getElementById('toggleTheme').onclick = () => {
+  const root = document.body;
+  if (root.getAttribute('data-theme') === 'light') {
+    root.setAttribute('data-theme','dark');
+    document.getElementById('toggleTheme').innerText = 'Light';
+  } else {
+    root.setAttribute('data-theme','light');
+    document.getElementById('toggleTheme').innerText = 'Dark';
+  }
+};
+
+// helper for fetch with optional token / api-key
+function authHeaders() {
+  const h = {'Content-Type':'application/json'};
+  if (state.token) h['Authorization'] = 'Bearer ' + state.token;
+  if (state.apiKey) h['x-api-key'] = state.apiKey;
+  return h;
+}
+
+async function loadAll() {
+  await loadActions();
+  loadMetrics();
+  loadApproval();
+  loadUsers();
+  loadAnomalies();
+  drawHeatmap();
+}
+
+async function loadActions(){
+  const actions = await fetch('/api/v1/actions', {headers: authHeaders()}).then(r=>r.json());
+  let html = '<table><tr><th>ID</th><th>Agent</th><th>Verb</th><th>Confidence</th><th>State</th><th>Time</th><th>Actions</th></tr>';
+  for (let a of actions) {
+    html += `<tr>
+      <td style="max-width:200px;word-break:break-all">${a.action_id}</td>
+      <td>${a.actor_id}</td>
+      <td>${a.verb}</td>
+      <td>${a.confidence}</td>
+      <td>${a.state}</td>
+      <td>${a.timestamp}</td>
+      <td>
+        <button class="btn" onclick="approve('${a.action_id}')">Approve</button>
+        <button class="btn danger" onclick="reject('${a.action_id}')">Reject</button>
+        <button class="btn" onclick="undo('${a.action_id}')">Undo</button>
+      </td>
+    </tr>`;
+  }
+  html += '</table>';
+  document.getElementById('actionsTable').innerHTML = html;
+  document.getElementById('latestActions').innerHTML = html;
+}
+
+async function loadMetrics(){
+  const perAgent = await fetch('/api/v1/metrics/actions_per_agent').then(r=>r.json());
+  const spend = await fetch('/api/v1/metrics/spend_by_agent').then(r=>r.json());
+  // Actions per agent chart
+  new Chart(document.getElementById('actionsPerAgent'), {
+    type:'bar',
+    data:{labels: perAgent.map(x=>x.actor_id), datasets:[{label:'Actions', data: perAgent.map(x=>x.count)}]},
+    options:{responsive:true}
+  });
+  new Chart(document.getElementById('spendChart'), {
+    type:'bar',
+    data:{labels: spend.map(x=>x.actor_id), datasets:[{label:'Spend', data: spend.map(x=>x.spent)}]},
+    options:{responsive:true}
+  });
+}
+
+async function loadApproval(){
+  const q = await fetch('/api/v1/metrics/approval_queue').then(r=>r.json());
+  if (q.length === 0) document.getElementById('approvalList').innerHTML = '<p>No pending approvals</p>';
+  else {
+    let s = '<ul>';
+    for (let i of q) s += `<li>${i.action_id} — ${i.verb} by ${i.actor_id} <button class="btn" onclick="approve('${i.action_id}')">Approve</button> <button class="btn danger" onclick="reject('${i.action_id}')">Reject</button></li>`;
+    s += '</ul>';
+    document.getElementById('approvalList').innerHTML = s;
+  }
+}
+
+async function loadUsers(){
+  // simple list from admin DB - reuse actions to show unique actor ids
+  const actions = await fetch('/api/v1/actions').then(r=>r.json());
+  const uniq = [...new Set(actions.map(a=>a.actor_id))];
+  let html = '<ul>';
+  for (let u of uniq) html += `<li>${u}</li>`;
+  html += '</ul>';
+  document.getElementById('usersList').innerHTML = html;
+}
+
+async function loadAnomalies(){
+  const a = await fetch('/api/v1/anomalies/low_confidence').then(r=>r.json());
+  if (a.length === 0) document.getElementById('policyViolations').innerHTML = '<p>No anomalies</p>';
+  else {
+    let s = '<ul>'; for (let it of a) s += `<li>${it.action_id} conf=${it.confidence}</li>`; s += '</ul>';
+    document.getElementById('policyViolations').innerHTML = s;
+  }
+}
+
+async function drawHeatmap(){
+  // simple zscore anomalies converted into heatmap-like scatter
+  const anomalies = await fetch('/api/v1/anomalies/zscore?lookback=200&z_threshold=2.0').then(r=>r.json());
+  const labels = anomalies.map(a=>a.actor_id);
+  const data = anomalies.map(a=>Math.abs(a.z));
+  new Chart(document.getElementById('heatmap'), {type:'bar', data:{labels, datasets:[{label:'|z-score|', data}]}, options:{responsive:true}});
+}
+
+// actions
+async function approve(id){
+  const headers = authHeaders();
+  if (state.token) headers['X-User-Id'] = 'alice'; // quick hack: include user header
+  await fetch(`/api/v1/actions/${id}/approve`, {method:'POST', headers});
+  await loadAll();
+}
+async function reject(id){
+  const headers = authHeaders();
+  if (state.token) headers['X-User-Id'] = 'alice';
+  await fetch(`/api/v1/actions/${id}/reject`, {method:'POST', headers});
+  await loadAll();
+}
+async function undo(id){
+  const headers = authHeaders();
+  if (state.token) headers['X-User-Id'] = 'alice';
+  await fetch(`/api/v1/actions/${id}/undo`, {method:'POST', headers});
+  await loadAll();
+}
+
+// dev token generator
+document.getElementById('getToken').onclick = async ()=>{
+  const uid = document.getElementById('loginUser').value || 'alice';
+  const resp = await fetch('/admin/token', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(uid)});
+  // note: admin/token expects raw string -> if it fails, we'll call via fetch with alternative format
+  let token;
+  try {
+    const j = await resp.json();
+    token = j.token || j;
+  } catch(e){
+    // try another approach
+    const rr = await fetch('/admin/token?user_id=' + encodeURIComponent(uid), {method:'POST'});
+    const jj = await rr.json();
+    token = jj.token;
+  }
+  state.token = token;
+  document.getElementById('tokenBox').innerText = 'Dev token saved (expires in 24h)';
+};
+
+// SSE live updates
+const ev = new EventSource('/api/v1/stream');
+ev.onmessage = (e) => {
+  try {
+    const obj = JSON.parse(e.data);
+    // console.log('SSE', obj);
+    // If action.* event - refresh
+    if (obj.type && obj.type.startsWith('action.')) {
+      loadAll();
+    }
+  } catch(err) { console.warn(err); }
+};
+
+loadAll();
+</script>
+</body>
+</html>
