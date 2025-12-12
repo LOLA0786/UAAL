@@ -1,11 +1,16 @@
+"""Analytics helpers for UAAL."""
 from db import SessionLocal, ActionRecord, AuditLog
-import datetime
 from sqlalchemy import func
+import datetime
+from typing import List, Dict, Any
 
-def actions_per_agent(since_minutes=60):
+
+def actions_per_agent(since_minutes: int = 60) -> List[Dict[str, Any]]:
     db = SessionLocal()
     try:
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=since_minutes)
+        cutoff = datetime.datetime.datetime.utcnow() - datetime.timedelta(
+            minutes=since_minutes
+        )
         rows = (
             db.query(ActionRecord.actor_id, func.count(ActionRecord.id).label("count"))
             .filter(ActionRecord.timestamp >= cutoff)
@@ -17,10 +22,13 @@ def actions_per_agent(since_minutes=60):
     finally:
         db.close()
 
-def policy_violations(since_days=30):
+
+def policy_violations(since_days: int = 30) -> List[Dict[str, Any]]:
     db = SessionLocal()
     try:
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=since_days)
+        cutoff = datetime.datetime.datetime.utcnow() - datetime.timedelta(
+            days=since_days
+        )
         rows = (
             db.query(AuditLog.event, func.count(AuditLog.id).label("count"))
             .filter(AuditLog.timestamp >= cutoff)
@@ -32,29 +40,59 @@ def policy_violations(since_days=30):
     finally:
         db.close()
 
-def approval_queue():
+
+def approval_queue() -> List[Dict[str, Any]]:
     db = SessionLocal()
     try:
-        rows = db.query(ActionRecord).filter(ActionRecord.state == "pending").order_by(ActionRecord.timestamp.asc()).all()
-        return [{"action_id": r.action_id, "actor_id": r.actor_id, "verb": r.verb, "timestamp": r.timestamp.isoformat(), "confidence": r.confidence} for r in rows]
+        rows = (
+            db.query(ActionRecord)
+            .filter(ActionRecord.state == "pending")
+            .order_by(ActionRecord.timestamp.asc())
+            .all()
+        )
+        return [
+            {
+                "action_id": r.action_id,
+                "actor_id": r.actor_id,
+                "verb": r.verb,
+                "timestamp": r.timestamp.isoformat(),
+                "confidence": r.confidence,
+            }
+            for r in rows
+        ]
     finally:
         db.close()
 
-def spend_by_agent(months=1):
+
+def spend_by_agent(months: int = 1) -> List[Dict[str, Any]]:
     db = SessionLocal()
     try:
-        first = (datetime.datetime.utcnow().replace(day=1, hour=0, minute=0, second=0) - datetime.timedelta(days=30*(months-1)))
+        first = datetime.datetime.datetime.utcnow().replace(
+            day=1, hour=0, minute=0, second=0
+        ) - datetime.timedelta(days=30 * (months - 1))
         rows = (
-            db.query(ActionRecord.actor_id, func.sum(func.coalesce(func.json_extract(ActionRecord.parameters, '$.cost'), 0)).label("spent"))
+            db.query(
+                ActionRecord.actor_id,
+                func.sum(
+                    func.coalesce(
+                        func.json_extract(ActionRecord.parameters, "$.cost"), 0
+                    )
+                ).label("spent"),
+            )
             .filter(ActionRecord.timestamp >= first)
             .group_by(ActionRecord.actor_id)
-            .order_by(func.sum(func.coalesce(func.json_extract(ActionRecord.parameters, '$.cost'), 0)).desc())
+            .order_by(
+                func.sum(
+                    func.coalesce(
+                        func.json_extract(ActionRecord.parameters, "$.cost"), 0
+                    )
+                ).desc()
+            )
             .all()
         )
-        # Note: SQLite's JSON functions vary by version; this fallback reads cost from parameters field in Python if DB JSON extraction fails.
-        out = []
+        output = []
         for r in rows:
-            out.append({"actor_id": r[0], "spent": float(r[1] or 0.0)})
-        return out
+            output.append({"actor_id": r[0], "spent": float(r[1] or 0.0)})
+        return output
     finally:
         db.close()

@@ -1,25 +1,88 @@
+"""Main UAAL v2 app - cleaned and modularized but in-place for your prototype."""
 from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from typing import Optional, Dict, Any
+import datetime
+import asyncio
+import json
+import requests
+
 import adapters_extended as adapters
 from db import SessionLocal, ActionRecord, User, Watchlist
 import policy
-import datetime
-import requests
-from typing import Optional
+import analytics
+import anomalies
+import replay
+import auth
 
-app = FastAPI(title="UAAL Prototype v2 - Enterprise")
+app = FastAPI(title="UAAL Prototype v2 - Enterprise (clean)")
 
-WEBHOOKS = {}
+# Simple in-memory webhook store for demo
+WEBHOOKS: Dict[str, Dict[str, Any]] = {}
 
+# SSE support
+_event_queues = []
+
+
+def _attach_event() -> asyncio.Queue:
+    q: asyncio.Queue = asyncio.Queue()
+    _event_queues.append(q)
+    return q
+
+
+def _detach_event(q: asyncio.Queue) -> None:
+    try:
+        _event_queues.remove(q)
+    except Exception:
+        pass
+
+
+async def _broadcast_event(event_type: str, payload: Dict[str, Any]) -> None:
+    msg = {
+        "type": event_type,
+        "payload": payload,
+        "ts": datetime.datetime.datetime.utcnow().isoformat(),
+    }
+    data = f"data: {json.dumps(msg)}\n\n"
+    queues = list(_event_queues)
+    for q in queues:
+        try:
+            await q.put(data)
+        except Exception:
+            _detach_event(q)
+
+
+@app.get("/api/v1/stream")
+async def event_stream():
+    q = _attach_event()
+
+    async def streamer():
+        try:
+            await q.put(
+                f'data: {json.dumps({"type":"welcome","payload":{"msg":"connected"}})}\\n\\n'
+            )
+            while True:
+                data = await q.get()
+                yield data
+        finally:
+            _detach_event(q)
+
+    return StreamingResponse(streamer(), media_type="text/event-stream")
+
+
+# Request / models
 class ReceiveAction(BaseModel):
     adapter: str
-    agent_output: dict
+    agent_output: Dict[str, Any]
     require_approval: bool = False
     user_id: Optional[str] = None
 
 
 @app.post("/api/v1/actions")
-async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Header(None)):
+async def receive_action(
+    payload: ReceiveAction, x_user_id: Optional[str] = Header(None)
+):
     adapter_name = payload.adapter
     if adapter_name not in adapters.Adapters:
         raise HTTPException(status_code=400, detail=f"Unknown adapter: {adapter_name}")
@@ -30,9 +93,7 @@ async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Head
     # Policy evaluation
     result = policy.evaluate(ua, user_id=user_id)
 
-    # ------------------------
-    # SAVE ACTION RECORD
-    # ------------------------
+    # Save to DB
     db = SessionLocal()
     try:
         row = ActionRecord(
@@ -45,34 +106,58 @@ async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Head
             parameters=ua.get("parameters", {}),
             confidence=float(ua.get("confidence", 0.0) or 0.0),
             reasoning=ua.get("reasoning", ""),
-            state="pending" if (payload.require_approval or result.get("require_approval")) else "executed",
-            timestamp=datetime.datetime.utcnow(),
+            state="pending"
+            if (payload.require_approval or result.get("require_approval"))
+            else "executed",
+            timestamp=datetime.datetime.datetime.utcnow(),
             delivered=False,
-            deliveries=[]
+            deliveries=[],
         )
         db.add(row)
         db.commit()
-        db.refresh(row)   # CRITICAL FIX: prevents DetachedInstanceError
+        db.refresh(row)
     finally:
         db.close()
 
     policy.log_audit(row.action_id, user_id or "system", "received", {"policy": result})
 
-    # ------------------------
-    # AUTO-DELIVERY (if allowed)
-    # ------------------------
-    if row.state == "executed" and result.get("allowed", True):
-        deliveries = await deliver_to_webhooks({
+    # Broadcast new action
+    await _broadcast_event(
+        "action.received",
+        {
             "action_id": row.action_id,
             "actor_id": row.actor_id,
             "verb": row.verb,
-            "object_type": row.object_type,
-            "parameters": row.parameters
-        })
+            "state": row.state,
+        },
+    )
 
+    # Auto-deliver if allowed and executed
+    if row.state == "executed" and result.get("allowed", True):
+        deliveries = []
+        for wid, w in WEBHOOKS.items():
+            try:
+                resp = requests.post(
+                    w["url"],
+                    json={
+                        "action_id": row.action_id,
+                        "actor_id": row.actor_id,
+                        "verb": row.verb,
+                        "object_type": row.object_type,
+                        "parameters": row.parameters,
+                    },
+                    timeout=5,
+                )
+                deliveries.append({"webhook_id": wid, "status": resp.status_code})
+            except Exception as exc:
+                deliveries.append({"webhook_id": wid, "error": str(exc)})
         db = SessionLocal()
         try:
-            stored = db.query(ActionRecord).filter(ActionRecord.action_id == row.action_id).first()
+            stored = (
+                db.query(ActionRecord)
+                .filter(ActionRecord.action_id == row.action_id)
+                .first()
+            )
             if stored:
                 stored.delivered = True
                 stored.deliveries = deliveries
@@ -80,13 +165,18 @@ async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Head
         finally:
             db.close()
 
-        policy.log_audit(row.action_id, user_id or "system", "delivered", {"deliveries": deliveries})
+        policy.log_audit(
+            row.action_id, user_id or "system", "delivered", {"deliveries": deliveries}
+        )
+        await _broadcast_event(
+            "action.delivered", {"action_id": row.action_id, "deliveries": deliveries}
+        )
 
     return {
         "status": "ok",
         "action_id": row.action_id,
         "state": row.state,
-        "policy": result
+        "policy": result,
     }
 
 
@@ -94,7 +184,12 @@ async def receive_action(payload: ReceiveAction, x_user_id: Optional[str] = Head
 async def list_actions(limit: int = 200):
     db = SessionLocal()
     try:
-        rows = db.query(ActionRecord).order_by(ActionRecord.timestamp.desc()).limit(limit).all()
+        rows = (
+            db.query(ActionRecord)
+            .order_by(ActionRecord.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
         return [
             {
                 "action_id": r.action_id,
@@ -109,7 +204,7 @@ async def list_actions(limit: int = 200):
                 "state": r.state,
                 "timestamp": r.timestamp.isoformat(),
                 "delivered": r.delivered,
-                "deliveries": r.deliveries
+                "deliveries": r.deliveries,
             }
             for r in rows
         ]
@@ -124,28 +219,44 @@ async def approve_action(action_id: str, x_user_id: Optional[str] = Header(None)
         row = db.query(ActionRecord).filter(ActionRecord.action_id == action_id).first()
         if not row:
             raise HTTPException(404, "Action not found")
-
         user = db.query(User).filter(User.id == (x_user_id or "")).first()
         if not user or user.role not in ("approver", "admin"):
             raise HTTPException(403, "Not authorized")
-
         row.state = "approved"
         db.commit()
         db.refresh(row)
     finally:
         db.close()
 
-    deliveries = await deliver_to_webhooks({
-        "action_id": row.action_id,
-        "actor_id": row.actor_id,
-        "verb": row.verb,
-        "object_type": row.object_type,
-        "parameters": row.parameters
-    })
+    await _broadcast_event(
+        "action.approved", {"action_id": row.action_id, "actor_id": row.actor_id}
+    )
+
+    # deliver on approve
+    deliveries = []
+    for wid, w in WEBHOOKS.items():
+        try:
+            resp = requests.post(
+                w["url"],
+                json={
+                    "action_id": row.action_id,
+                    "actor_id": row.actor_id,
+                    "verb": row.verb,
+                    "parameters": row.parameters,
+                },
+                timeout=5,
+            )
+            deliveries.append({"webhook_id": wid, "status": resp.status_code})
+        except Exception as exc:
+            deliveries.append({"webhook_id": wid, "error": str(exc)})
 
     db = SessionLocal()
     try:
-        stored = db.query(ActionRecord).filter(ActionRecord.action_id == row.action_id).first()
+        stored = (
+            db.query(ActionRecord)
+            .filter(ActionRecord.action_id == row.action_id)
+            .first()
+        )
         if stored:
             stored.delivered = True
             stored.deliveries = deliveries
@@ -153,9 +264,34 @@ async def approve_action(action_id: str, x_user_id: Optional[str] = Header(None)
     finally:
         db.close()
 
-    policy.log_audit(action_id, x_user_id or "unknown", "approved_and_delivered", {"deliveries": deliveries})
-
+    policy.log_audit(
+        action_id,
+        x_user_id or "unknown",
+        "approved_and_delivered",
+        {"deliveries": deliveries},
+    )
     return {"status": "approved", "deliveries": deliveries}
+
+
+@app.post("/api/v1/actions/{action_id}/reject")
+async def reject_action(action_id: str, x_user_id: Optional[str] = Header(None)):
+    db = SessionLocal()
+    try:
+        row = db.query(ActionRecord).filter(ActionRecord.action_id == action_id).first()
+        if not row:
+            raise HTTPException(404, "Action not found")
+        user = db.query(User).filter(User.id == (x_user_id or "")).first()
+        if not user or user.role not in ("approver", "admin"):
+            raise HTTPException(403, "Not authorized")
+        row.state = "rejected"
+        db.commit()
+        db.refresh(row)
+    finally:
+        db.close()
+
+    policy.log_audit(action_id, x_user_id or "unknown", "rejected", {})
+    await _broadcast_event("action.rejected", {"action_id": action_id})
+    return {"status": "rejected"}
 
 
 @app.post("/api/v1/actions/{action_id}/undo")
@@ -167,22 +303,30 @@ async def undo_action(action_id: str, x_user_id: Optional[str] = Header(None)):
             raise HTTPException(404, "Action not found")
         row.state = "undone"
         db.commit()
+        db.refresh(row)
     finally:
         db.close()
-
     policy.log_audit(action_id, x_user_id or "unknown", "undo", {})
+    await _broadcast_event("action.undone", {"action_id": action_id})
     return {"status": "undone"}
 
 
 @app.post("/api/v1/webhooks/register")
 async def register_webhook(req: Request, x_user_id: Optional[str] = Header(None)):
     body = await req.json()
-    webhook_id = body.get("id") or datetime.datetime.utcnow().isoformat()
+    webhook_id = body.get("id") or datetime.datetime.datetime.utcnow().isoformat()
     WEBHOOKS[webhook_id] = body
-    policy.log_audit("system", x_user_id or "system", "webhook_register", {"webhook_id": webhook_id})
+    policy.log_audit(
+        "system",
+        x_user_id or "system",
+        "webhook_register",
+        {"webhook_id": webhook_id, "body": body},
+    )
+    await _broadcast_event("webhook.registered", {"webhook_id": webhook_id})
     return {"status": "ok", "webhook_id": webhook_id}
 
 
+# Admin helpers
 class CreateUser(BaseModel):
     id: str
     display_name: str
@@ -194,16 +338,22 @@ class CreateUser(BaseModel):
 def create_user(u: CreateUser):
     db = SessionLocal()
     try:
-        exists = db.query(User).filter(User.id == u.id).first()
-        if exists:
-            raise HTTPException(400, "User already exists")
-        user = User(id=u.id, display_name=u.display_name, role=u.role, spending_limit=u.spending_limit)
+        existing = db.query(User).filter(User.id == u.id).first()
+        if existing:
+            raise HTTPException(400, "user exists")
+        user = User(
+            id=u.id,
+            display_name=u.display_name,
+            role=u.role,
+            spending_limit=u.spending_limit,
+        )
         db.add(user)
         db.commit()
     finally:
         db.close()
-
-    policy.log_audit("system", u.id, "user_created", {"role": u.role})
+    policy.log_audit(
+        "system", u.id, "user_created", {"role": u.role, "limit": u.spending_limit}
+    )
     return {"status": "ok", "user_id": u.id}
 
 
@@ -219,390 +369,66 @@ def add_watchlist(entry: WatchlistEntry, x_user_id: Optional[str] = Header(None)
     try:
         user = db.query(User).filter(User.id == (x_user_id or "")).first()
         if not user or user.role != "admin":
-            raise HTTPException(403, "Not authorized")
-        wl = Watchlist(type=entry.type, field=entry.field, value=entry.value)
-        db.add(wl)
+            raise HTTPException(403, "forbidden")
+        w = Watchlist(type=entry.type, field=entry.field, value=entry.value)
+        db.add(w)
         db.commit()
     finally:
         db.close()
-
-    policy.log_audit("system", x_user_id or "unknown", "watchlist_add", {"rule": entry.dict()})
+    policy.log_audit(
+        "system", x_user_id or "unknown", "watchlist_add", {"entry": entry.dict()}
+    )
     return {"status": "ok"}
 
 
-async def deliver_to_webhooks(action_record):
-    deliveries = []
-    for wid, w in WEBHOOKS.items():
-        try:
-            resp = requests.post(w["url"], json=action_record, timeout=3)
-            deliveries.append({"webhook_id": wid, "status": resp.status_code})
-        except Exception as e:
-            deliveries.append({"webhook_id": wid, "error": str(e)})
-    return deliveries
-
-# --- Analytics endpoints ---
-from fastapi import Depends
-import analytics
-import anomalies
-import governance
-import replay
-
+# Metrics & analytics endpoints
 @app.get("/api/v1/metrics/actions_per_agent")
 def metrics_actions_per_agent(minutes: int = 60):
     return analytics.actions_per_agent(since_minutes=minutes)
+
 
 @app.get("/api/v1/metrics/policy_violations")
 def metrics_policy_violations(days: int = 30):
     return analytics.policy_violations(since_days=days)
 
+
 @app.get("/api/v1/metrics/approval_queue")
 def metrics_approval_queue():
     return analytics.approval_queue()
+
 
 @app.get("/api/v1/metrics/spend_by_agent")
 def metrics_spend_by_agent(months: int = 1):
     return analytics.spend_by_agent(months=months)
 
+
 @app.get("/api/v1/anomalies/low_confidence")
 def anomalies_low_confidence(threshold: float = 0.5, lookback_minutes: int = 60):
-    return anomalies.low_confidence_alert(threshold=threshold, lookback_minutes=lookback_minutes)
+    return anomalies.low_confidence_alert(
+        threshold=threshold, lookback_minutes=lookback_minutes
+    )
+
 
 @app.get("/api/v1/anomalies/zscore")
 def anomalies_zscore(lookback: int = 500, z_threshold: float = 3.0):
-    return anomalies.zscore_confidence_anomalies(lookback=lookback, z_threshold=z_threshold)
+    return anomalies.zscore_confidence_anomalies(
+        lookback=lookback, z_threshold=z_threshold
+    )
+
 
 @app.post("/api/v1/replay/{action_id}")
 def replay_action(action_id: str):
     return replay.replay_action(action_id, dry_run=True)
 
-# governance helpers
-@app.post("/api/v1/2fa/generate")
-def generate_2fa(x_user_id: str | None = Header(None)):
-    if not x_user_id:
-        raise HTTPException(400, "Missing X-User-Id")
-    code = governance.generate_2fa(x_user_id)
-    # In production, send via SMS/Email. Here return code for demo.
-    return {"status":"ok","code":code}
 
-@app.post("/api/v1/2fa/verify")
-def verify_2fa(x_user_id: str | None = Header(None), code: str | None = None):
-    if not x_user_id or not code:
-        raise HTTPException(400, "Missing fields")
-    ok = governance.verify_2fa(x_user_id, code)
-    return {"ok": ok}
-
-from fastapi.responses import HTMLResponse
-import json
+# Dev-only token endpoint (dev use)
+@app.post("/admin/token")
+def admin_token(user_id: str):
+    token = auth.create_jwt(user_id, expires_in=86400)
+    return {"token": token}
 
 
-
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard():
-    return """\
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>UAAL Admin Console</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --bg: #f5f6fb; --card: #fff; --muted:#666; --accent:#1976D2;
-    }
-    [data-theme="dark"] {
-      --bg: #0f1115; --card:#111318; --muted:#aaa; --accent:#4ea3ff;
-      color: #ddd;
-    }
-    body { font-family: Inter, Arial, sans-serif; margin:0; background:var(--bg); color:inherit; }
-    header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; background:var(--card); box-shadow:0 1px 4px rgba(0,0,0,0.04); }
-    h1 { margin:0; font-size:18px; }
-    .container { padding:20px; max-width:1200px; margin:0 auto; }
-    .grid { display:grid; grid-template-columns: 1fr 360px; gap:20px; align-items:start; }
-    .card { background:var(--card); padding:14px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.04); }
-    table { width:100%; border-collapse:collapse; font-size:13px; }
-    th,td{ text-align:left; padding:6px 8px; border-bottom:1px solid rgba(0,0,0,0.06); }
-    .muted { color:var(--muted); font-size:13px;}
-    .tabs { display:flex; gap:8px; margin-bottom:12px; }
-    .tab { padding:8px 12px; border-radius:6px; cursor:pointer; background:transparent; }
-    .tab.active { background:var(--accent); color:white;}
-    .small { font-size:13px; }
-    .btn { padding:6px 10px; border-radius:6px; background:var(--accent); color:#fff; border:none; cursor:pointer; }
-    .danger { background:#e53935; }
-    .row { display:flex; gap:10px; align-items:center; }
-    #loginBox input { padding:8px; width:220px; }
-  </style>
-</head>
-<body data-theme="light">
-  <header>
-    <div style="display:flex; gap:16px; align-items:center">
-      <h1>UAAL Admin Console</h1>
-      <div class="muted small">Local development</div>
-    </div>
-    <div class="row">
-      <label style="margin-right:8px">Theme</label>
-      <button class="btn small" id="toggleTheme">Dark</button>
-    </div>
-  </header>
-
-  <div class="container">
-    <div class="tabs" id="tabs">
-      <div class="tab active" data-tab="dashboard">Dashboard</div>
-      <div class="tab" data-tab="actions">Actions</div>
-      <div class="tab" data-tab="approval">Approval Queue</div>
-      <div class="tab" data-tab="analytics">Analytics</div>
-      <div class="tab" data-tab="users">Users / API Keys</div>
-    </div>
-
-    <div id="pages">
-      <!-- DASHBOARD -->
-      <div id="dashboard" class="page">
-        <div class="grid">
-          <div>
-            <div class="card">
-              <h3>Latest Actions</h3>
-              <div id="latestActions">loading…</div>
-            </div>
-
-            <div class="card" style="margin-top:12px;">
-              <h3>Anomaly Heatmap (Confidence z-score)</h3>
-              <canvas id="heatmap" style="height:240px"></canvas>
-            </div>
-          </div>
-
-          <div>
-            <div class="card">
-              <h3>Actions per Agent</h3>
-              <canvas id="actionsPerAgent" style="height:220px"></canvas>
-            </div>
-
-            <div class="card" style="margin-top:12px;">
-              <h3>Policy Violations</h3>
-              <div id="policyViolations">loading…</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ACTIONS LIST -->
-      <div id="actions" class="page" style="display:none">
-        <div class="card">
-          <h3>All Actions</h3>
-          <div id="actionsTable">loading…</div>
-        </div>
-      </div>
-
-      <!-- APPROVAL -->
-      <div id="approval" class="page" style="display:none">
-        <div class="card">
-          <h3>Approval Queue</h3>
-          <div id="approvalList">loading…</div>
-        </div>
-      </div>
-
-      <!-- ANALYTICS -->
-      <div id="analytics" class="page" style="display:none">
-        <div class="card">
-          <h3>Spend by Agent</h3>
-          <canvas id="spendChart" style="height:200px"></canvas>
-        </div>
-      </div>
-
-      <!-- USERS -->
-      <div id="users" class="page" style="display:none">
-        <div class="card">
-          <h3>Users / API Keys</h3>
-          <div id="usersList">loading…</div>
-          <div style="margin-top:10px;">
-            <div id="loginBox">
-              <input id="loginUser" placeholder="user id (e.g., alice or api_key_123)"/>
-              <button class="btn" id="getToken">Get Dev Token</button>
-              <div class="muted small" id="tokenBox"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-<script>
-const state = {
-  token: null,
-  apiKey: null
-};
-
-// tabs
-document.querySelectorAll('.tab').forEach(t => {
-  t.onclick = () => {
-    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-    t.classList.add('active');
-    document.querySelectorAll('.page').forEach(p=>p.style.display='none');
-    document.getElementById(t.dataset.tab).style.display = 'block';
-  };
-});
-
-// theme toggle
-document.getElementById('toggleTheme').onclick = () => {
-  const root = document.body;
-  if (root.getAttribute('data-theme') === 'light') {
-    root.setAttribute('data-theme','dark');
-    document.getElementById('toggleTheme').innerText = 'Light';
-  } else {
-    root.setAttribute('data-theme','light');
-    document.getElementById('toggleTheme').innerText = 'Dark';
-  }
-};
-
-// helper for fetch with optional token / api-key
-function authHeaders() {
-  const h = {'Content-Type':'application/json'};
-  if (state.token) h['Authorization'] = 'Bearer ' + state.token;
-  if (state.apiKey) h['x-api-key'] = state.apiKey;
-  return h;
-}
-
-async function loadAll() {
-  await loadActions();
-  loadMetrics();
-  loadApproval();
-  loadUsers();
-  loadAnomalies();
-  drawHeatmap();
-}
-
-async function loadActions(){
-  const actions = await fetch('/api/v1/actions', {headers: authHeaders()}).then(r=>r.json());
-  let html = '<table><tr><th>ID</th><th>Agent</th><th>Verb</th><th>Confidence</th><th>State</th><th>Time</th><th>Actions</th></tr>';
-  for (let a of actions) {
-    html += `<tr>
-      <td style="max-width:200px;word-break:break-all">${a.action_id}</td>
-      <td>${a.actor_id}</td>
-      <td>${a.verb}</td>
-      <td>${a.confidence}</td>
-      <td>${a.state}</td>
-      <td>${a.timestamp}</td>
-      <td>
-        <button class="btn" onclick="approve('${a.action_id}')">Approve</button>
-        <button class="btn danger" onclick="reject('${a.action_id}')">Reject</button>
-        <button class="btn" onclick="undo('${a.action_id}')">Undo</button>
-      </td>
-    </tr>`;
-  }
-  html += '</table>';
-  document.getElementById('actionsTable').innerHTML = html;
-  document.getElementById('latestActions').innerHTML = html;
-}
-
-async function loadMetrics(){
-  const perAgent = await fetch('/api/v1/metrics/actions_per_agent').then(r=>r.json());
-  const spend = await fetch('/api/v1/metrics/spend_by_agent').then(r=>r.json());
-  // Actions per agent chart
-  new Chart(document.getElementById('actionsPerAgent'), {
-    type:'bar',
-    data:{labels: perAgent.map(x=>x.actor_id), datasets:[{label:'Actions', data: perAgent.map(x=>x.count)}]},
-    options:{responsive:true}
-  });
-  new Chart(document.getElementById('spendChart'), {
-    type:'bar',
-    data:{labels: spend.map(x=>x.actor_id), datasets:[{label:'Spend', data: spend.map(x=>x.spent)}]},
-    options:{responsive:true}
-  });
-}
-
-async function loadApproval(){
-  const q = await fetch('/api/v1/metrics/approval_queue').then(r=>r.json());
-  if (q.length === 0) document.getElementById('approvalList').innerHTML = '<p>No pending approvals</p>';
-  else {
-    let s = '<ul>';
-    for (let i of q) s += `<li>${i.action_id} — ${i.verb} by ${i.actor_id} <button class="btn" onclick="approve('${i.action_id}')">Approve</button> <button class="btn danger" onclick="reject('${i.action_id}')">Reject</button></li>`;
-    s += '</ul>';
-    document.getElementById('approvalList').innerHTML = s;
-  }
-}
-
-async function loadUsers(){
-  // simple list from admin DB - reuse actions to show unique actor ids
-  const actions = await fetch('/api/v1/actions').then(r=>r.json());
-  const uniq = [...new Set(actions.map(a=>a.actor_id))];
-  let html = '<ul>';
-  for (let u of uniq) html += `<li>${u}</li>`;
-  html += '</ul>';
-  document.getElementById('usersList').innerHTML = html;
-}
-
-async function loadAnomalies(){
-  const a = await fetch('/api/v1/anomalies/low_confidence').then(r=>r.json());
-  if (a.length === 0) document.getElementById('policyViolations').innerHTML = '<p>No anomalies</p>';
-  else {
-    let s = '<ul>'; for (let it of a) s += `<li>${it.action_id} conf=${it.confidence}</li>`; s += '</ul>';
-    document.getElementById('policyViolations').innerHTML = s;
-  }
-}
-
-async function drawHeatmap(){
-  // simple zscore anomalies converted into heatmap-like scatter
-  const anomalies = await fetch('/api/v1/anomalies/zscore?lookback=200&z_threshold=2.0').then(r=>r.json());
-  const labels = anomalies.map(a=>a.actor_id);
-  const data = anomalies.map(a=>Math.abs(a.z));
-  new Chart(document.getElementById('heatmap'), {type:'bar', data:{labels, datasets:[{label:'|z-score|', data}]}, options:{responsive:true}});
-}
-
-// actions
-async function approve(id){
-  const headers = authHeaders();
-  if (state.token) headers['X-User-Id'] = 'alice'; // quick hack: include user header
-  await fetch(`/api/v1/actions/${id}/approve`, {method:'POST', headers});
-  await loadAll();
-}
-async function reject(id){
-  const headers = authHeaders();
-  if (state.token) headers['X-User-Id'] = 'alice';
-  await fetch(`/api/v1/actions/${id}/reject`, {method:'POST', headers});
-  await loadAll();
-}
-async function undo(id){
-  const headers = authHeaders();
-  if (state.token) headers['X-User-Id'] = 'alice';
-  await fetch(`/api/v1/actions/${id}/undo`, {method:'POST', headers});
-  await loadAll();
-}
-
-// dev token generator
-document.getElementById('getToken').onclick = async ()=>{
-  const uid = document.getElementById('loginUser').value || 'alice';
-  const resp = await fetch('/admin/token', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(uid)});
-  // note: admin/token expects raw string -> if it fails, we'll call via fetch with alternative format
-  let token;
-  try {
-    const j = await resp.json();
-    token = j.token || j;
-  } catch(e){
-    // try another approach
-    const rr = await fetch('/admin/token?user_id=' + encodeURIComponent(uid), {method:'POST'});
-    const jj = await rr.json();
-    token = jj.token;
-  }
-  state.token = token;
-  document.getElementById('tokenBox').innerText = 'Dev token saved (expires in 24h)';
-};
-
-// SSE live updates
-const ev = new EventSource('/api/v1/stream');
-ev.onmessage = (e) => {
-  try {
-    const obj = JSON.parse(e.data);
-    // console.log('SSE', obj);
-    // If action.* event - refresh
-    if (obj.type && obj.type.startsWith('action.')) {
-      loadAll();
-    }
-  } catch(err) { console.warn(err); }
-};
-
-loadAll();
-</script>
-</body>
-</html>
-
-"""
+# Simple home
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return {"status": "UAAL v2 Enterprise running", "version": "2.0", "docs": "/docs"}

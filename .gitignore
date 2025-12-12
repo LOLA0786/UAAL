@@ -1,11 +1,28 @@
+# Virtual environments
 venv/
 venv.v2/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3
-.env
-.DS_Store
-*.log
+
+# SQLite / DB
 *.db
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+.idea/
+
+# bundled assets
+node_modules/
+

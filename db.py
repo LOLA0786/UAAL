@@ -1,17 +1,31 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, Float, Boolean, Text
+"""Database models and session factory for UAAL prototype."""
+import datetime
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    DateTime,
+    JSON,
+    Float,
+    Boolean,
+    Text,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import datetime
 
 DATABASE_URL = "sqlite:///./uaal_v2.db"
+
+# Engine and session
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
+
 
 class ActionRecord(Base):
     __tablename__ = "actions"
     id = Column(Integer, primary_key=True, index=True)
-    action_id = Column(String, unique=True, index=True)
+    action_id = Column(String, unique=True, index=True, nullable=False)
     actor_id = Column(String, index=True)
     actor_type = Column(String)
     verb = Column(String, index=True)
@@ -25,6 +39,7 @@ class ActionRecord(Base):
     delivered = Column(Boolean, default=False)
     deliveries = Column(JSON, nullable=True)
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id = Column(Integer, primary_key=True, index=True)
@@ -34,12 +49,14 @@ class AuditLog(Base):
     details = Column(JSON)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
+
 class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, index=True)
     display_name = Column(String)
     role = Column(String)  # admin, approver, agent, viewer
     spending_limit = Column(Float, default=0.0)
+
 
 class Watchlist(Base):
     __tablename__ = "watchlists"
@@ -48,4 +65,11 @@ class Watchlist(Base):
     field = Column(String)
     value = Column(String)
 
-Base.metadata.create_all(bind=engine)
+
+# Create tables
+def init_db() -> None:
+    Base.metadata.create_all(bind=engine)
+
+
+# Initialize DB when module imported
+init_db()

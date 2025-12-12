@@ -1,5 +1,8 @@
-fastapi
-uvicorn
-pydantic
-requests
-sqlalchemy
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+pydantic==1.10.12
+requests==2.31.0
+SQLAlchemy==2.1.0
+python-jose==3.3.0
+python-dotenv==1.0.0
+chart.js==3.9.1
