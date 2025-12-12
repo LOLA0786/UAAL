@@ -1,12 +1,17 @@
-# UAAL — Universal Agent Action Layer (Prototype)
+# UAAL — Universal Agent Action Layer
 
-This repository holds the UAAL prototype — a normalization, governance and delivery layer
-that lets autonomous agents act across applications with auditability and safety.
+Short: UAAL normalizes agent outputs into a Universal Action Schema (UAS), evaluates policies, logs auditable traces, and safely routes actions to effectors.
 
-## Quickstart (local)
-```bash
-python3 -m venv venv.v2
-source venv.v2/bin/activate
-pip install -r requirements.txt
-uvicorn app_v2:app --reload --port 8000
+## What’s included
+- FastAPI core (`app_v2.py`) with RBAC and API-key/JWT auth.
+- Adapters + SDK scaffolding.
+- Observability: Prometheus metrics + Grafana dashboards (provisioning).
+- Retry queue (Redis) + Celery worker skeleton.
+- Kafka producer hook.
+- ML anomaly detector (IsolationForest bootstrap).
+- CI (GitHub Actions).
+- Docker + k8s starter manifests.
+
+## Quick start (local dev)
+1. Install Python 3.10+, create venv:
 

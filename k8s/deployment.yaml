@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uaal
+  namespace: uaal
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: uaal
+  template:
+    metadata:
+      labels:
+        app: uaal
+    spec:
+      containers:
+        - name: uaal
+          image: yourrepo/uaal:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://uaal:uaalpass@postgres/uaal"
+            - name: REDIS_URL
+              value: "redis://redis:6379/0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uaal
+  namespace: uaal
+spec:
+  selector:
+    app: uaal
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer

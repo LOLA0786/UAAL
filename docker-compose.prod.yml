@@ -1,0 +1,35 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    image: uaal:latest
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://uaal:uaalpass@postgres/uaal
+      - REDIS_URL=redis://redis:6379/0
+    ports: ["8000:8000"]
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: uaal
+      POSTGRES_PASSWORD: uaalpass
+      POSTGRES_DB: uaal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  celery:
+    build: .
+    command: celery -A celery_worker.app worker --loglevel=info
+    depends_on:
+      - redis
+      - postgres
+
+volumes:
+  pgdata:
