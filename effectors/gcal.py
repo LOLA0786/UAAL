@@ -1,20 +1,13 @@
-"""
-Google Calendar effector stub.
-Replace with real google-api-python-client integration.
-"""
+from typing import Dict, Any
+from .base import Effector
 
-import logging
-logger = logging.getLogger("uaal.effectors.gcal")
 
-def create_event(calendar_id: str, summary: str, start_iso: str, end_iso: str, attendees=None):
-    logger.info(
-        "create_event() stub: calendar=%s summary=%s start=%s end=%s",
-        calendar_id, summary, start_iso, end_iso
-    )
-    # Placeholder response — simulates event creation
-    return {
-        "status": "ok",
-        "calendar_id": calendar_id,
-        "event_id": "evt_stub_12345",
-        "summary": summary,
-    }
+class GoogleCalendarEffector(Effector):
+    """Mock Google Calendar effector (real API can be added easily)."""
+
+    def deliver(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        title = payload["title"]
+        start = payload.get("start")
+
+        print(f"[GCAL] Creating: {title} at {start}")
+        return {"status": "created", "event_title": title}

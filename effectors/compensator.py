@@ -1,18 +1,16 @@
-"""
-Compensating actions registry and simple orchestrator.
-For each delivered effector, register a compensating function to undo the effect.
-"""
-COMPENSATE_REGISTRY = {}
+from typing import Dict, Callable
 
-def register_compensator(action_id: str, fn, *args, **kwargs):
-    COMPENSATE_REGISTRY[action_id] = (fn, args, kwargs)
 
-def run_compensator(action_id: str):
-    if action_id not in COMPENSATE_REGISTRY:
-        return {"status": "not_found"}
-    fn, args, kwargs = COMPENSATE_REGISTRY.pop(action_id)
-    try:
-        res = fn(*args, **kwargs)
-        return {"status": "ok", "result": res}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
+_COMPENSATORS = {}
+
+
+def register_compensator(verb: str, func: Callable[[Dict], Dict]):
+    _COMPENSATORS[verb] = func
+
+
+def undo_action(action) -> Dict:
+    verb = action.verb
+    if verb not in _COMPENSATORS:
+        return {"status": "no_undo_available"}
+
+    return _COMPENSATORS[verb](action.parameters)

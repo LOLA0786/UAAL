@@ -1,46 +1,55 @@
+import time
 import requests
-from typing import Optional, Dict, Any
+from typing import Dict, Any, Optional
+from .models import ActionResult, ActionRequest
 
 
 class UAALClient:
-    def __init__(self, base_url: str, api_key: Optional[str] = None, timeout: int = 10):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, api_key: str, base_url: str = "http://127.0.0.1:8000"):
         self.api_key = api_key
-        self.timeout = timeout
+        self.base_url = base_url.rstrip("/")
 
-    def _headers(self):
-        h = {"Content-Type": "application/json"}
-        if self.api_key:
-            h["x-api-key"] = self.api_key
-        return h
-
-    def send_action(
-        self,
-        adapter: str,
-        agent_output: Dict[str, Any],
-        require_approval: bool = False,
-        user_id: Optional[str] = None,
-    ):
-        payload = {
-            "adapter": adapter,
-            "agent_output": agent_output,
-            "require_approval": require_approval,
-            "user_id": user_id,
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json",
         }
+
+    def submit_action(
+        self, verb: str, object_type: str, parameters: Dict[str, Any]
+    ) -> ActionResult:
+
+        payload = {
+            "adapter": "sdk_raw",
+            "payload": {
+                "verb": verb,
+                "parameters": parameters,
+                "object_type": object_type,
+                "confidence": 0.95,
+                "reasoning": "UAAL Python SDK",
+            },
+        }
+
         r = requests.post(
             f"{self.base_url}/api/v1/actions",
             json=payload,
             headers=self._headers(),
-            timeout=self.timeout,
+            timeout=10,
         )
-        r.raise_for_status()
-        return r.json()
 
-    def get_actions(self, limit: int = 100):
-        r = requests.get(
-            f"{self.base_url}/api/v1/actions?limit={limit}",
-            headers=self._headers(),
-            timeout=self.timeout,
-        )
         r.raise_for_status()
-        return r.json()
+        return ActionResult(**r.json())
+
+    # retry wrapper
+    def retry_submit(
+        self, verb: str, object_type: str, parameters: Dict[str, Any],
+        retries: int = 3, delay: float = 1.0
+    ) -> ActionResult:
+        for i in range(retries):
+            try:
+                return self.submit_action(verb, object_type, parameters)
+            except Exception as e:
+                if i == retries - 1:
+                    raise e
+                time.sleep(delay)
+                delay *= 2  # exponential backoff
