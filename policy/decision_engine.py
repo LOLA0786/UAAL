@@ -24,3 +24,25 @@ def decide_action(intent, context):
         return True, "no_consent"
 
     return False, "auto_approved"
+
+from policy.approval_queue import enqueue
+from policy.autonomy_registry import get_score
+from observability.telemetry import emit
+
+def enforce_with_learning(intent, context):
+    needs_approval, reason = decide_action(intent, context)
+    score = get_score(intent.actor_id)
+
+    if needs_approval:
+        approval = enqueue(
+            action_id=intent.actor_id,
+            reason=reason,
+            requested_by=intent.actor_id,
+        )
+        emit("approval_requested", {"reason": reason})
+        score.record_failure()
+        return False, approval
+
+    score.record_success()
+    emit("action_executed", {"verb": intent.verb})
+    return True, None
