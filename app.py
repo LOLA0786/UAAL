@@ -1,10 +1,17 @@
 from fastapi import FastAPI
+
+from models import init_db
 from admin.api import router as admin_router
 from agent.api import router as agent_router
-from dashboard import router as dashboard_router
 
-app = FastAPI(title="UAAL Prototype")
+# Initialize DB (idempotent)
+init_db()
+
+app = FastAPI(title="UAAL")
 
 app.include_router(admin_router, prefix="/admin")
-app.include_router(agent_router)
-app.include_router(dashboard_router)
+app.include_router(agent_router, prefix="/agent")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
