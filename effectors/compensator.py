@@ -1,16 +1,28 @@
-from typing import Dict, Callable
+"""
+Compensator registry for reversible / undoable actions.
+Used by replay, rollback, and failure recovery.
+"""
+
+from typing import Dict, Callable, Any
+
+_COMPENSATORS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
 
 
-_COMPENSATORS = {}
-
-
-def register_compensator(verb: str, func: Callable[[Dict], Dict]):
+def register_compensator(verb: str, func: Callable[[Dict[str, Any]], Dict[str, Any]]):
+    """
+    Register a compensating (undo) function for an action verb.
+    """
     _COMPENSATORS[verb] = func
 
 
-def undo_action(action) -> Dict:
-    verb = action.verb
+def run_compensator(verb: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute a compensating action if available.
+    """
     if verb not in _COMPENSATORS:
         return {"status": "no_undo_available"}
 
-    return _COMPENSATORS[verb](action.parameters)
+    try:
+        return _COMPENSATORS[verb](parameters)
+    except Exception as e:
+        return {"status": "undo_failed", "error": str(e)}

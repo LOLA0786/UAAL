@@ -1,13 +1,23 @@
 from fastapi import APIRouter
-from policy.approval_queue import APPROVAL_QUEUE
-from observability.telemetry import stats
+from pydantic import BaseModel
+import secrets
 
-router = APIRouter(prefix="/admin")
+router = APIRouter(prefix="/api-keys")
 
-@router.get("/approvals")
-def list_approvals():
-    return list(APPROVAL_QUEUE.values())
+class CreateKeyRequest(BaseModel):
+    owner: str
+    role: str
 
-@router.get("/telemetry")
-def telemetry_stats():
-    return stats()
+@router.post("/create")
+def create_api_key(payload: CreateKeyRequest):
+    api_key = "uaal_" + secrets.token_hex(24)
+    return {
+        "status": "ok",
+        "owner": payload.owner,
+        "role": payload.role,
+        "api_key": api_key
+    }
+
+@router.post("/verify")
+def verify_api_key():
+    return {"status": "valid"}

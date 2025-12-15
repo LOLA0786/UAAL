@@ -1,20 +1,25 @@
-from typing import Dict, Any
-from effectors.emailer import EmailEffector
-from effectors.gcal import GoogleCalendarEffector
-from effectors.slacker import SlackEffector
-from effectors.webhook import WebhookEffector
+"""
+Delivery router for executing or simulating agent actions.
+Used by Celery workers and synchronous fallback paths.
+"""
 
-ROUTER = {
-    "send_email": EmailEffector(),
-    "create_calendar_event": GoogleCalendarEffector(),
-    "post_slack_message": SlackEffector(),
-    "webhook_call": WebhookEffector(),
-}
+from typing import Dict
+from observability import emit_event
 
 
-def route_action(verb: str, parameters: Dict[str, Any]):
-    effector = ROUTER.get(verb)
-    if not effector:
-        return {"status": "no_effector"}
+def handle_delivery_result(action_id: str) -> Dict:
+    """
+    Execute the delivery for a given action.
+    In v1 this is a stub / webhook-style executor.
+    """
+    emit_event("delivery.start", {"action_id": action_id})
 
-    return effector.deliver(parameters)
+    # TODO: integrate real effectors (email, calendar, payments)
+    result = {
+        "action_id": action_id,
+        "status": "delivered",
+        "executor": "stub",
+    }
+
+    emit_event("delivery.complete", result)
+    return result

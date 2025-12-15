@@ -1,18 +1,22 @@
-import time
-import uuid
+"""
+Telemetry + metrics for UAAL
+"""
 
-EVENTS = []
+from datetime import datetime
+from typing import Dict, Any
 
-def emit(event_type, payload):
-    EVENTS.append({
-        "id": str(uuid.uuid4()),
+stats = {
+    "actions_total": 0,
+    "actions_blocked": 0,
+    "approvals_pending": 0,
+}
+
+def emit_event(event_type: str, payload: Dict[str, Any]):
+    event = {
         "type": event_type,
+        "timestamp": datetime.utcnow().isoformat(),
         "payload": payload,
-        "ts": time.time(),
-    })
-
-def stats():
-    by_type = {}
-    for e in EVENTS:
-        by_type[e["type"]] = by_type.get(e["type"], 0) + 1
-    return by_type
+    }
+    print("[EVENT]", event)
+    stats["actions_total"] += 1
+    return event

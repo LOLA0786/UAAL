@@ -1,32 +1,29 @@
-"""
-Role-based access control helpers.
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from apikeys import verify_api_key
 
-Provides:
-- require_role dependency factory that can be used in endpoint signatures.
-Usage:
-    from middleware_rbac import require_role
-    @app.post("/admin/secure")
-    def secure_endpoint(current_user = Depends(get_current_user), _ = Depends(require_role("admin"))):
-        ...
-"""
+EXEMPT_PATHS = (
+    "/admin/api-keys",
+    "/admin",
+    "/docs",
+    "/openapi.json",
+)
 
-from typing import Callable
-from fastapi import Depends, HTTPException
-import middleware_auth
+class RBACMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
 
-def require_role(role: str):
-    """
-    Dependency that raises HTTPException(403) if current_user.role is not sufficient.
-    Example: Depends(require_role("admin"))
-    """
-    def _inner(current_user = Depends(middleware_auth.get_current_user)):
-        user_role = current_user.get("role") if current_user else None
-        # simple hierarchical roles can be extended; for now exact match or admin override
-        if not user_role:
-            raise HTTPException(status_code=403, detail="Missing role")
-        if user_role == "admin":
-            return True
-        if user_role != role:
-            raise HTTPException(status_code=403, detail=f"Requires role: {role}")
-        return True
-    return _inner
+        for p in EXEMPT_PATHS:
+            if path.startswith(p):
+                return await call_next(request)
+
+        api_key = request.headers.get("x-api-key") or request.headers.get("authorization")
+        if not api_key:
+            raise HTTPException(status_code=401, detail="Missing API key")
+
+        key_info = verify_api_key(api_key)
+        if not key_info:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+        request.state.api_key = key_info
+        return await call_next(request)

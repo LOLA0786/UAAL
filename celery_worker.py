@@ -1,6 +1,7 @@
 from celery import Celery
-from delivery_router import route_action
-from delivery.middleware import handle_delivery_result
+from delivery_router import handle_delivery_result
+from retry_backoff import with_retry
+from observability import emit_event
 
 app = Celery(
     "uaal_worker",
@@ -9,18 +10,12 @@ app = Celery(
 )
 
 
-@app.task(name="deliver_action", bind=True)
-def deliver_action(self, action_id: str, verb: str, parameters: dict):
+@app.task(bind=True, autoretry_for=(), retry_backoff=False)
+def deliver_action(self, action_id: str):
     try:
-        result = route_action(verb, parameters)
+        result = handle_delivery_result(action_id)
+        emit_event("delivery.success", {"action_id": action_id})
+        return result
     except Exception as e:
-        result = {"status": "error", "error": str(e)}
-
-    # attempt count comes from Celery retries
-    attempt = self.request.retries
-    handle_delivery_result(action_id, result, attempt)
-
-    if result.get("status") == "error":
-        raise self.retry(exc=Exception(result["error"]), countdown=2)
-
-    return result
+        emit_event("delivery.error", {"action_id": action_id, "error": str(e)})
+        raise

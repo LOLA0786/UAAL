@@ -1,28 +1,29 @@
-from models.approval import ApprovalRequest
+"""
+Central approval queue for human-in-the-loop actions.
+"""
 
-APPROVAL_QUEUE: dict[str, ApprovalRequest] = {}
+from typing import Dict, List
 
-def enqueue(action_id, reason, requested_by):
-    req = ApprovalRequest(
-        action_id=action_id,
-        reason=reason,
-        requested_by=requested_by,
-    )
-    APPROVAL_QUEUE[req.id] = req
-    return req
+# Canonical approval queue
+APPROVAL_QUEUE: Dict[str, Dict] = {}
 
-def approve(approval_id, reviewer):
-    req = APPROVAL_QUEUE.get(approval_id)
-    if not req:
-        return None
-    req.status = "approved"
-    req.reviewed_by = reviewer
-    return req
+def enqueue(action_id: str, payload: Dict):
+    APPROVAL_QUEUE[action_id] = {
+        "action_id": action_id,
+        "payload": payload,
+        "status": "pending",
+    }
 
-def reject(approval_id, reviewer):
-    req = APPROVAL_QUEUE.get(approval_id)
-    if not req:
-        return None
-    req.status = "rejected"
-    req.reviewed_by = reviewer
-    return req
+def approve(action_id: str):
+    if action_id in APPROVAL_QUEUE:
+        APPROVAL_QUEUE[action_id]["status"] = "approved"
+
+def reject(action_id: str):
+    if action_id in APPROVAL_QUEUE:
+        APPROVAL_QUEUE[action_id]["status"] = "rejected"
+
+def get(action_id: str):
+    return APPROVAL_QUEUE.get(action_id)
+
+def list_pending() -> List[Dict]:
+    return [v for v in APPROVAL_QUEUE.values() if v["status"] == "pending"]

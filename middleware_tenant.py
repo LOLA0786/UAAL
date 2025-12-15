@@ -1,15 +1,27 @@
-"""
-Simple tenant extractor/enforcer.
-Adds 'org_id' to request state via dependency for endpoints to use.
-"""
-from fastapi import Header, HTTPException, Request
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
-async def get_current_org(request: Request, x_org_id: str | None = Header(None)):
-    if not x_org_id:
-        # optional: allow system-level requests if you must
-        # raise HTTPException(status_code=400, detail="Missing X-Org-Id header")
-        request.state.org_id = None
-        return None
-    # You can add DB validation here to check tenant exists
-    request.state.org_id = x_org_id
-    return x_org_id
+# Routes that do NOT require tenant context
+PUBLIC_PATH_PREFIXES = (
+    "/docs",
+    "/openapi.json",
+    "/admin",
+)
+
+class TenantMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Allow admin & public routes without tenant
+        if path.startswith(PUBLIC_PATH_PREFIXES):
+            return await call_next(request)
+
+        # Tenant comes from API key (set by RBAC)
+        api_key = getattr(request.state, "api_key", None)
+        if not api_key:
+            raise HTTPException(status_code=401, detail="Missing API context")
+
+        # In v1: owner == tenant
+        request.state.tenant = api_key["owner"]
+
+        return await call_next(request)

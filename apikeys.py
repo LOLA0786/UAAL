@@ -1,60 +1,54 @@
-"""API key utilities and simple CLI to create keys in DB (dev only)."""
 import secrets
-import hashlib
-from db import SessionLocal, Base
-from sqlalchemy import Column, Integer, String, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from typing import Optional
+import sqlite3
+from typing import Optional, Dict
 
-# local simple table - if your db.py defines Base, skip duplicate table
-from db import engine
-from sqlalchemy.orm import sessionmaker
+DB_PATH = "uaal_v2.db"
 
-LocalBase = Base
+def _conn():
+    return sqlite3.connect(DB_PATH)
 
 
-class ApiKey(LocalBase):
-    __tablename__ = "api_keys"
-    id = Column(Integer, primary_key=True)
-    key = Column(String, unique=True, index=True)
-    owner = Column(String, index=True)
-    scopes = Column(String, default="")
-    disabled = Column(Boolean, default=False)
-
-
-def create_key(owner: str, scopes: str = "") -> str:
-    raw = secrets.token_urlsafe(32)
-    # store hashed key in DB (simple sha256)
-    hashed = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    db = SessionLocal()
-    try:
-        k = ApiKey(key=hashed, owner=owner, scopes=scopes, disabled=False)
-        db.add(k)
-        db.commit()
-    finally:
-        db.close()
-    return raw
-
-
-def verify_key(raw_key: str) -> Optional[dict]:
-    if not raw_key:
-        return None
-    import hashlib
-
-    hashed = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
-    db = SessionLocal()
-    try:
-        rec = (
-            db.query(ApiKey)
-            .filter(ApiKey.key == hashed, ApiKey.disabled == False)
-            .first()
+def init_api_keys():
+    with _conn() as c:
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS api_keys (
+            key TEXT PRIMARY KEY,
+            owner TEXT,
+            role TEXT,
+            active INTEGER DEFAULT 1
         )
-        if not rec:
-            return None
-        return {"owner": rec.owner, "scopes": rec.scopes}
-    finally:
-        db.close()
+        """)
+        c.commit()
 
 
-# create table if not existing
-LocalBase.metadata.create_all(bind=engine)
+def create_api_key(owner: str, role: str = "agent") -> str:
+    init_api_keys()
+    key = secrets.token_urlsafe(32)
+
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO api_keys (key, owner, role) VALUES (?, ?, ?)",
+            (key, owner, role),
+        )
+        c.commit()
+
+    return key
+
+
+def verify_api_key(key: str) -> Optional[Dict]:
+    init_api_keys()
+
+    with _conn() as c:
+        row = c.execute(
+            "SELECT key, owner, role FROM api_keys WHERE key = ? AND active = 1",
+            (key,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "key": row[0],
+        "owner": row[1],
+        "role": row[2],
+    }
