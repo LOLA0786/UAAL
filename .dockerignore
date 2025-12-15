@@ -1,0 +1,6 @@
+venv/
+venv.v2/
+__pycache__/
+.git/
+.DS_Store
+agent_keys.json
