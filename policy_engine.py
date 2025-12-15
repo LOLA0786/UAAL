@@ -1,7 +1,7 @@
 from datetime import datetime
 
 def is_within_time_window(policy: dict) -> bool:
-    if "allowed_hours" not in policy:
+    if not policy or "allowed_hours" not in policy:
         return True
 
     start, end = policy["allowed_hours"]
