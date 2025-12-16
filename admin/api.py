@@ -39,3 +39,37 @@ def audit(admin=Depends(require_admin)):
         "total_keys": len(API_KEYS),
         "keys": API_KEYS
     }
+
+from admin.audit_export import export_audit_csv
+
+@router.get("/audit/export")
+def export_audit():
+    return export_audit_csv()
+
+from admin.metrics import metrics
+
+@router.get("/metrics")
+def pilot_metrics():
+    return metrics()
+from storage import get_db
+from datetime import datetime
+
+@router.post("/approve/{trace_id}")
+def approve_action(trace_id: str):
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    UPDATE audit
+    SET status='approved', reason=NULL
+    WHERE trace_id=? AND status='needs_approval'
+    """, (trace_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "trace_id": trace_id,
+        "status": "approved",
+        "approved_at": datetime.utcnow().isoformat()
+    }

@@ -1,3 +1,1 @@
-from .dependencies import require_admin
-
-__all__ = ["require_admin"]
+from .dependencies import require_admin, require_role

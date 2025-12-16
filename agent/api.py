@@ -152,3 +152,6 @@ def soc2_controls():
 @router.get("/audit")
 def audit():
     return AUDIT_LOG[-50:]
+
+# ---- Amount-based risk gate ----
+MAX_AUTO_APPROVE_AMOUNT = 5000

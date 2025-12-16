@@ -1,36 +1,14 @@
-from fastapi import Header, HTTPException, status
-import os
+from fastapi import Header, HTTPException
 
-DEMO_MODE = os.getenv("UAAL_DEMO_MODE", "true").lower() == "true"
-DEMO_ADMIN_KEY = os.getenv("UAAL_ADMIN_KEY", "demo-admin-key")
+def require_role(required_role: str):
+    def checker(x_role: str = Header(None)):
+        if x_role != required_role:
+            raise HTTPException(status_code=403, detail="Insufficient role")
+        return x_role
+    return checker
 
-def require_admin(
-    x_api_key: str = Header(None),
-    authorization: str = Header(None),
-):
-    # 🚨 INVESTOR DEMO MODE: NEVER BLOCK
-    if DEMO_MODE:
-        return True
-
-    # ---- PRODUCTION MODE BELOW ----
-    provided_key = None
-
-    if x_api_key:
-        provided_key = x_api_key
-
-    if authorization and authorization.lower().startswith("bearer "):
-        provided_key = authorization.split(" ", 1)[1].strip()
-
-    if not provided_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing admin API key"
-        )
-
-    if provided_key != DEMO_ADMIN_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin API key"
-        )
-
-    return True
+# Backward-compatible admin dependency
+def require_admin(x_role: str = Header(None)):
+    if x_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return x_role

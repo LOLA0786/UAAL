@@ -1,9 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
-def is_within_time_window(policy: dict) -> bool:
-    if "allowed_hours" not in policy:
-        return True
+SLA_SECONDS = 20  # demo-friendly
 
-    start, end = policy["allowed_hours"]
-    now_hour = datetime.now().hour
-    return start <= now_hour < end
+def approval_expired(requested_at: str) -> bool:
+    ts = datetime.fromisoformat(requested_at)
+    return datetime.utcnow() > ts + timedelta(seconds=SLA_SECONDS)
