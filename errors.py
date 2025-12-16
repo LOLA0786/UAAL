@@ -1,0 +1,8 @@
+from enum import Enum
+
+class DenyReason(str, Enum):
+    UNKNOWN_AGENT = "UNKNOWN_AGENT"
+    SCOPE_DENIED = "SCOPE_DENIED"
+    POLICY_TIME_DENIED = "POLICY_TIME_DENIED"
+    TOOL_DENIED = "TOOL_DENIED"
+    ADMIN_ONLY = "ADMIN_ONLY"

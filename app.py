@@ -1,17 +1,22 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
-from models import init_db
 from admin.api import router as admin_router
 from agent.api import router as agent_router
 
-# Initialize DB (idempotent)
-init_db()
+app = FastAPI(
+    title="UAAL · Agent Authorization Control Plane",
+    version="0.1.0"
+)
 
-app = FastAPI(title="UAAL")
+# APIs
+app.include_router(admin_router)
+app.include_router(agent_router)
 
-app.include_router(admin_router, prefix="/admin")
-app.include_router(agent_router, prefix="/agent")
+# Frontend
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.get("/")
+def frontend():
+    return FileResponse("static/index.html")

@@ -1,25 +1,8 @@
-from db import get_db
-import json
 
-def init_db():
-    with get_db() as db:
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS agents (
-            api_key TEXT PRIMARY KEY,
-            owner TEXT,
-            role TEXT,
-            scopes TEXT,
-            policy TEXT
-        )
-        """)
+from datetime import datetime
 
-        db.execute("""
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key TEXT,
-            action TEXT,
-            decision TEXT,
-            reason TEXT,
-            ts DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+def policy_active(policy):
+    active_from = policy.get("active_from")
+    if not active_from:
+        return True
+    return datetime.utcnow() >= datetime.fromisoformat(active_from)

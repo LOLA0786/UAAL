@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>UAAL · Enterprise Governance OS</title>
+  <style>
+    body { font-family: system-ui; margin: 40px; }
+    button { margin: 4px; padding: 6px 12px; }
+    .green { color: green; }
+    .yellow { color: orange; }
+    .red { color: red; }
+    pre { background:#111; color:#eee; padding:10px; }
+  </style>
+</head>
+<body>
+
+<h1>UAAL · Enterprise Governance OS</h1>
+
+<h3>Org: acme</h3>
+
+<h3>Agent Actions</h3>
+<button onclick="act('agent-A','read')">Read</button>
+<button onclick="act('agent-A','execute')">Execute</button>
+<button onclick="act('agent-A','simulate')">Simulate</button>
+<button onclick="act('agent-A','risk_score')">Risk</button>
+
+<h3>Status</h3>
+<pre id="status">—</pre>
+
+<h3>Multi-Agent Graph</h3>
+<pre id="graph"></pre>
+
+<h3>Policy Bundle (Signed)</h3>
+<pre id="policy"></pre>
+
+<h3>SOC-2 Mapping</h3>
+<pre id="soc2"></pre>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
