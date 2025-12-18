@@ -1,75 +1,93 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from auth import require_admin
-import secrets
+from typing import Optional, List, Dict
+from datetime import datetime
+import json, os, uuid
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin")
 
-API_KEYS = {}
+AUDIT_FILE = "audit_log.json"
 
-class CreateAgentRequest(BaseModel):
-    owner: str = "demo"
-    role: str = "agent"
-    name: str | None = None
+def load():
+    if not os.path.exists(AUDIT_FILE):
+        return []
+    return json.load(open(AUDIT_FILE))
 
-@router.post("/api-keys/create")
-def create_api_key(
-    payload: CreateAgentRequest,
-    admin=Depends(require_admin)
-):
-    key = secrets.token_hex(16)
+def save(d):
+    json.dump(d, open(AUDIT_FILE,"w"))
 
-    API_KEYS[key] = {
-        "owner": payload.owner,
-        "role": payload.role,
-        "name": payload.name,
-        "active": True
-    }
+class RunRequest(BaseModel):
+    agent: str
+    action: str
 
-    return {
-        "api_key": key,
-        "owner": payload.owner,
-        "role": payload.role,
-        "name": payload.name
-    }
+class ApproveRequest(BaseModel):
+    trace_id: str
+    decision: str
+
+class AuditEvent(BaseModel):
+    timestamp: str
+    org: str
+    agent: str
+    action: str
+    status: str
+    reason: Optional[str]
+    trace_id: str
+
+GRAPH: Dict[str, List[str]] = {
+    "billing-agent": ["ledger-agent","notification-agent"],
+    "ledger-agent": [],
+    "notification-agent": ["email-agent"],
+    "email-agent": []
+}
+
+@router.get("/graph")
+def graph():
+    return GRAPH
 
 @router.get("/audit")
-def audit(admin=Depends(require_admin)):
-    return {
-        "total_keys": len(API_KEYS),
-        "keys": API_KEYS
-    }
-
-from admin.audit_export import export_audit_csv
-
-@router.get("/audit/export")
-def export_audit():
-    return export_audit_csv()
-
-from admin.metrics import metrics
+def audit():
+    return load()
 
 @router.get("/metrics")
-def pilot_metrics():
-    return metrics()
-from storage import get_db
-from datetime import datetime
-
-@router.post("/approve/{trace_id}")
-def approve_action(trace_id: str):
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-    UPDATE audit
-    SET status='approved', reason=NULL
-    WHERE trace_id=? AND status='needs_approval'
-    """, (trace_id,))
-
-    conn.commit()
-    conn.close()
-
+def metrics():
+    a = load()
     return {
-        "trace_id": trace_id,
-        "status": "approved",
-        "approved_at": datetime.utcnow().isoformat()
+        "total_actions": len(a),
+        "approved": len([x for x in a if x["status"]=="approved"]),
+        "rejected": len([x for x in a if x["status"]=="rejected"]),
+        "pending": len([x for x in a if x["status"]=="needs_approval"]),
     }
+
+@router.post("/run")
+def run(req: RunRequest):
+    audit = load()
+    trace = uuid.uuid4().hex[:8]
+
+    status = "approved"
+    reason = None
+    if req.action == "execute":
+        status = "needs_approval"
+        reason = "HIGH_RISK_ACTION"
+
+    event = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "org": "acme",
+        "agent": req.agent,
+        "action": req.action,
+        "status": status,
+        "reason": reason,
+        "trace_id": trace
+    }
+
+    audit.append(event)
+    save(audit)
+    return event
+
+@router.post("/approve")
+def approve(req: ApproveRequest):
+    audit = load()
+    for e in audit:
+        if e["trace_id"] == req.trace_id and e["status"]=="needs_approval":
+            e["status"] = req.decision
+    save(audit)
+    return {"ok": True}

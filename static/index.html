@@ -1,39 +1,67 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>UAAL · Enterprise Governance OS</title>
+  <meta charset="UTF-8" />
+  <title>UAAL – Decision Evidence</title>
   <style>
-    body { font-family: system-ui; margin: 40px; }
-    button { padding: 6px 12px; margin-right: 6px; }
-    pre { background: #111; color: #eee; padding: 12px; }
-    .panel { margin-top: 24px; }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h1 { margin-bottom: 10px; }
+    .card { border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; }
+    .verified { color: green; font-weight: bold; }
+    .invalid { color: red; font-weight: bold; }
+    button { margin-right: 10px; }
+    code { background: #f4f4f4; padding: 2px 4px; }
   </style>
 </head>
 <body>
 
-<h1>UAAL · Enterprise Governance OS</h1>
+<h1>UAAL – Decision Evidence</h1>
+<p>Live cryptographic verification of AI decisions</p>
 
-<h2>Agent Actions</h2>
-<button onclick="act('agent-A','read')">Read</button>
-<button onclick="act('agent-A','execute')">Execute</button>
-<button onclick="act('agent-A','simulate')">Simulate</button>
-<button onclick="act('agent-A','risk_score')">Risk Score</button>
+<div id="decisions"></div>
 
-<div class="panel">
-  <h3>Status</h3>
-  <pre id="status">—</pre>
-</div>
+<script>
+async function loadDecisions() {
+  const res = await fetch('/admin/decisions');
+  const decisions = await res.json();
 
-<div class="panel">
-  <h3>Multi-Agent Dependency Graph</h3>
-  <div id="graph">Loading graph…</div>
-</div>
+  const container = document.getElementById('decisions');
+  container.innerHTML = '';
 
-<div class="panel">
-  <h3>Audit Log</h3>
-  <pre id="audit">Loading audit…</pre>
-</div>
+  for (const d of decisions) {
+    const statusRes = await fetch(`/admin/status/${d.decision_id}`);
+    const status = await statusRes.json();
 
-<script src="/static/app.js"></script>
+    const div = document.createElement('div');
+    div.className = 'card';
+
+    const badgeClass = status.status === 'VERIFIED' ? 'verified' : 'invalid';
+
+    div.innerHTML = `
+      <div><b>ID:</b> <code>${d.decision_id}</code></div>
+      <div><b>Status:</b> <span class="${badgeClass}">${status.status}</span></div>
+      <br/>
+      <button onclick="tamper('${d.decision_id}')">Tamper</button>
+      <button onclick="verify('${d.decision_id}')">Verify</button>
+    `;
+
+    container.appendChild(div);
+  }
+}
+
+async function tamper(id) {
+  await fetch(`/admin/tamper/${id}`, { method: 'POST' });
+  loadDecisions();
+}
+
+async function verify(id) {
+  const res = await fetch(`/admin/verify/${id}`);
+  const data = await res.json();
+  alert(JSON.stringify(data, null, 2));
+}
+
+loadDecisions();
+</script>
+
 </body>
 </html>
