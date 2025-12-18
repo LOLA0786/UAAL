@@ -205,6 +205,173 @@ POST /api/v1/actions/{action_id}/undo
 - **Solution**: UAAL tracks costs per agent, alerts when budgets are exceeded
 
 ---
+# UAAL — Verifiable AI Decision Infrastructure
+
+UAAL (Universal AI Authorization Layer) ensures that autonomous AI actions
+are **provable, auditable, and tamper-evident**.
+
+This is not logging.
+This is cryptographic decision accountability.
+
+---
+
+## Why UAAL Exists
+
+Modern AI agents can:
+- change prices
+- approve transactions
+- trigger emails
+- modify systems
+
+Traditional logs can be edited.
+UAAL produces **immutable decision evidence** that can be verified independently.
+
+---
+
+## What UAAL Guarantees
+
+For every AI action:
+
+1. **Authorization**
+   - Every action is checked against an explicit policy
+2. **Evidence**
+   - A structured decision record is generated
+3. **Immutability**
+   - Evidence is cryptographically hashed
+4. **Independent Verification**
+   - Anyone can verify integrity without trusting UAAL
+
+---
+
+## Independent Verification (Auditors / Regulators)
+
+Verification does **not** require:
+- UAAL runtime
+- Source code access
+- Secrets
+- Database access
+
+### Install verifier
+```bash
+pip install uaal-verify
+
+
+Verify all AI decisions for a day
+uaal-verify day YYYY-MM-DD
+
+Verify a single AI decision
+uaal-verify record <decision_id>
+
+Verify a date range
+uaal-verify range YYYY-MM-DD YYYY-MM-DD
+
+
+If any evidence was modified, verification fails deterministically.
+
+Regulatory Mapping
+EU AI Act (High-Risk Systems)
+
+Article 12: Logging → UAAL evidence
+
+Article 14: Human oversight → uaal-approvals
+
+Article 15: Accuracy & robustness → tamper detection
+
+SOC 2
+
+CC7.2: Change detection → Merkle verification
+
+CC5.3: Control enforcement → policy gating
+
+CC8.1: Auditability → independent verifier
+
+RBI / Financial Regulators
+
+Non-repudiation of automated decisions
+
+Post-facto audit of AI actions
+
+Separation of execution and verification
+
+What UAAL Is NOT
+
+❌ Not an LLM wrapper
+
+❌ Not a monitoring dashboard
+
+❌ Not prompt logging
+
+UAAL is compliance infrastructure for autonomous systems.
+
+Summary (for auditors)
+
+“UAAL allows any third party to independently verify that AI decisions
+were authorized, unmodified, and policy-compliant.”
+
+That is the core guarantee.
+
+
+This doc alone is enough for:
+- enterprise security review
+- compliance conversations
+- regulator discussions
+
+---
+
+# 3️⃣ Integration Example (distribution lever)
+
+We’ll do **CrewAI-style** because it’s simple and familiar.
+
+---
+
+## 📦 Example: CrewAI + UAAL (20 lines)
+
+**Where**
+- New repo or folder: `uaal-crewai-demo/`
+- Or add to `uaal-regulated-ai-demo/`
+
+---
+
+### `crew_agent.py`
+
+```python
+from uaal import authorize
+from uaal.approvals import require_approval
+
+def pricing_agent(new_price: int):
+    decision = authorize(
+        agent="pricing-agent",
+        action="update_price",
+        payload={"new_price": new_price}
+    )
+
+    if not decision.allowed:
+        raise Exception("Blocked by policy")
+
+    if new_price > 500:
+        require_approval(decision)
+
+    return "price updated"
+
+What this demonstrates (important)
+
+CrewAI / agents stay unchanged
+
+UAAL is a drop-in gate
+
+Policies are enforced before action
+
+Evidence is generated automatically
+
+Verification is external
+
+This is exactly what enterprises want:
+
+“Don’t rewrite my agents. Just control them.”
+
+
+
+
 
 ## 🔌 Integrations
 
