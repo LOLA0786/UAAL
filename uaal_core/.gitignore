@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+evidence/
+uaal_evidence.log
+uaal_merkle.state
