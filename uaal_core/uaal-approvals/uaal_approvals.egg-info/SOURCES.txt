@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+uaal_approvals/__init__.py
+uaal_approvals/approvals.py
+uaal_approvals/store.py
+uaal_approvals.egg-info/PKG-INFO
+uaal_approvals.egg-info/SOURCES.txt
+uaal_approvals.egg-info/dependency_links.txt
+uaal_approvals.egg-info/top_level.txt

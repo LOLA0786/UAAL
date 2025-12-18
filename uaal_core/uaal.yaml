@@ -1,0 +1,30 @@
+uaal:
+  org: demo-corp
+  environment: prod
+
+policies:
+  - id: pricing_policy_v1
+    agent: pricing-agent
+    rules:
+      max_price_change_pct: 20
+      requires_human_approval: false
+
+  - id: email_policy_v1
+    agent: email-agent
+    rules:
+      allowed_domains:
+        - example.com
+        - partner.com
+
+agents:
+  - name: pricing-agent
+    role: autonomous
+    maturity_level: 2
+
+  - name: billing-agent
+    role: autonomous
+    maturity_level: 3
+
+  - name: supervisor-agent
+    role: human
+    maturity_level: 6

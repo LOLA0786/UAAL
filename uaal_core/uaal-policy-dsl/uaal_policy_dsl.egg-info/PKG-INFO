@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: uaal-policy-dsl
+Version: 0.1.0
+Summary: Declarative policy language for AI authorization and compliance
+Author-email: Chandan Galani <info@lolasolution.com>
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# uaal-policy-dsl
+
+Declarative, auditor-friendly policy language for AI authorization.
+
+Separates model intent from action permission.
+Designed for regulated environments.

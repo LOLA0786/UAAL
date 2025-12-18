@@ -1,0 +1,3 @@
+recursive-include uaal *.py
+include README.md
+include pyproject.toml

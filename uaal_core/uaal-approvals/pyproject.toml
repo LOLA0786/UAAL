@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uaal-approvals"
+version = "0.1.0"
+description = "Human-in-the-loop approval enforcement for autonomous AI actions"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name="Chandan Galani", email="info@lolasolution.com" }]
+
+[tool.setuptools]
+packages = ["uaal_approvals"]

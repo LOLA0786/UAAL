@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: uaal-approvals
+Version: 0.1.0
+Summary: Human-in-the-loop approval enforcement for autonomous AI actions
+Author-email: Chandan Galani <info@lolasolution.com>
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# uaal-approvals
+
+Mandatory human approval layer for high-risk AI actions.
+
+This library pauses AI execution until an explicit human decision is recorded.
+
+Designed for EU AI Act, RBI, and SOC2 compliance.

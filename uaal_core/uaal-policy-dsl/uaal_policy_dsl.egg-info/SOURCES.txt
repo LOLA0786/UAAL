@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+uaal_policy_dsl/__init__.py
+uaal_policy_dsl/evaluator.py
+uaal_policy_dsl.egg-info/PKG-INFO
+uaal_policy_dsl.egg-info/SOURCES.txt
+uaal_policy_dsl.egg-info/dependency_links.txt
+uaal_policy_dsl.egg-info/top_level.txt

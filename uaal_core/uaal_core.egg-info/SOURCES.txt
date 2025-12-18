@@ -1,0 +1,17 @@
+MANIFEST.in
+README.md
+pyproject.toml
+uaal/__init__.py
+uaal/evidence.py
+uaal/gen_root.py
+uaal/merkle.py
+uaal/policy.py
+uaal/s3_store.py
+uaal/storage.py
+uaal/uaal_middleware.py
+uaal/verify.py
+uaal_core.egg-info/PKG-INFO
+uaal_core.egg-info/SOURCES.txt
+uaal_core.egg-info/dependency_links.txt
+uaal_core.egg-info/requires.txt
+uaal_core.egg-info/top_level.txt

@@ -1,0 +1,50 @@
+# UAAL Core
+
+**Universal AI Authorization Layer (UAAL)**
+
+UAAL is a lightweight control plane for autonomous AI systems.
+It enforces policy decisions *before* actions execute and produces
+cryptographically verifiable evidence for every decision.
+
+## What it does
+
+- Authorizes AI agent actions in real time
+- Blocks unsafe or non-compliant actions
+- Records immutable evidence per decision
+- Generates daily Merkle roots for audit integrity
+- Verifies tampering independently
+
+## Install
+
+```bash
+pip install uaal-core
+```
+
+## Minimal Usage
+
+```python
+from uaal import authorize, emit_evidence
+
+decision = authorize(
+    agent="pricing-agent",
+    action="update_price",
+    payload={"new_price": 120}
+)
+
+emit_evidence(decision)
+```
+
+## Verify Integrity
+
+```python
+from uaal.verify import verify_day
+print(verify_day())
+```
+
+## Philosophy
+
+UAAL is not an agent framework.
+It is the **seatbelt, black box, and kill switch** for AI autonomy.
+
+## License
+Apache 2.0

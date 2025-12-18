@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uaal-policy-dsl"
+version = "0.1.0"
+description = "Declarative policy language for AI authorization and compliance"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name="Chandan Galani", email="info@lolasolution.com" }]
+
+[tool.setuptools]
+packages = ["uaal_policy_dsl"]

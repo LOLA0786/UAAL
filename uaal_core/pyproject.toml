@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uaal-core"
+version = "0.1.0"
+description = "Universal AI Authorization Layer (UAAL): policy gating, evidence logging, and Merkle-based verification for autonomous agents"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Chandan Galani", email = "info@lolasolution.com" }
+]
+requires-python = ">=3.9"
+
+dependencies = [
+  "fastapi>=0.100",
+  "pydantic>=2.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/LOLA0786/uaal-core"
+Repository = "https://github.com/LOLA0786/uaal-core"
+Issues = "https://github.com/LOLA0786/uaal-core/issues"
+
+[tool.setuptools]
+packages = ["uaal"]
